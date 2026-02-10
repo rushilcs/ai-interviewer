@@ -49,9 +49,8 @@ export function CodingLayout({
           <div className="flex items-center gap-2">
             <Button
               variant="secondary"
-              size="sm"
               onClick={() => setNavigatorOpen(true)}
-              className="lg:hidden"
+              className="lg:hidden h-8 px-3 text-xs"
             >
               Sections
             </Button>
@@ -66,7 +65,7 @@ export function CodingLayout({
             <div className="absolute inset-0 bg-overlay" onClick={() => setNavigatorOpen(false)} />
             <div className="absolute left-0 top-0 bottom-0 w-[280px] max-w-[85vw] bg-surface border-r border-border shadow-lg flex flex-col">
               <div className="p-3 border-b border-border flex justify-end">
-                <Button variant="secondary" size="sm" onClick={() => setNavigatorOpen(false)}>
+                <Button variant="secondary" onClick={() => setNavigatorOpen(false)} className="h-8 px-3 text-xs">
                   Close
                 </Button>
               </div>
@@ -98,7 +97,7 @@ export function CodingLayout({
               href={`/interview/${interviewId}/coding?token=${encodeURIComponent(token ?? "")}`}
               className="inline-block"
             >
-              <Button variant="primary" size="lg">
+              <Button variant="primary" className="h-10 px-5 text-base">
                 Begin Coding Assessment
               </Button>
             </a>

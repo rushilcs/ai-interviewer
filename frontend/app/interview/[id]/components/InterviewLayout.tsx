@@ -118,7 +118,7 @@ export function InterviewLayout({
         </h1>
         <div className="flex items-center gap-2 flex-shrink-0">
           <CountdownPill remainingSeconds={currentSection?.remaining_seconds ?? null} />
-          <Button variant="secondary" size="sm" onClick={onOpenAssistant}>
+          <Button variant="secondary" onClick={onOpenAssistant} className="h-8 px-3 text-xs">
             Assistant
           </Button>
         </div>
@@ -189,12 +189,12 @@ export function InterviewLayout({
 
       {/* Mobile: Sections button + sheet */}
       <div className="lg:hidden flex-shrink-0 border-b border-border bg-surface px-4 py-2 flex items-center justify-between">
-        <Button variant="secondary" size="sm" onClick={() => setNavigatorOpen(true)}>
+        <Button variant="secondary" onClick={() => setNavigatorOpen(true)} className="h-8 px-3 text-xs">
           Sections
         </Button>
         <div className="flex items-center gap-2">
           <CountdownPill remainingSeconds={currentSection?.remaining_seconds ?? null} />
-          <Button variant="secondary" size="sm" onClick={onOpenAssistant}>
+          <Button variant="secondary" onClick={onOpenAssistant} className="h-8 px-3 text-xs">
             Assistant
           </Button>
         </div>
@@ -204,7 +204,7 @@ export function InterviewLayout({
           <div className="absolute inset-0 bg-overlay" onClick={() => setNavigatorOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-[280px] max-w-[85vw] bg-surface border-r border-border shadow-lg flex flex-col">
             <div className="p-3 border-b border-border flex justify-end">
-              <Button variant="secondary" size="sm" onClick={() => setNavigatorOpen(false)}>
+              <Button variant="secondary" onClick={() => setNavigatorOpen(false)} className="h-8 px-3 text-xs">
                 Close
               </Button>
             </div>

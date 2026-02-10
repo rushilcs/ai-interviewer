@@ -229,8 +229,8 @@ export default function OpsInterviewDetailPage() {
   async function loadInterviewStatus() {
     if (!id) return;
     try {
-      const data = await opsFetch<{ interviews: { status: string }[] }>("/api/ops/interviews");
-      const found = data.interviews?.find((i: { id: string }) => i.id === id);
+      const data = await opsFetch<{ interviews: { id: string; status: string }[] }>("/api/ops/interviews");
+      const found = data.interviews?.find((i) => i.id === id);
       if (found) setStatus(found.status);
     } catch {
       // ignore

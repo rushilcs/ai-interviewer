@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,7 +16,7 @@ type SessionResponse = {
   sections: { id: string; name: string; duration_seconds: number }[];
 };
 
-export default function InterviewSessionPage() {
+function InterviewSessionContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams.get("token");
@@ -136,5 +137,21 @@ export default function InterviewSessionPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function InterviewSessionPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center p-4 bg-bg">
+        <Card className="w-full max-w-xl">
+          <CardContent className="p-6 text-center">
+            <p className="text-muted text-sm">Loading…</p>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <InterviewSessionContent />
+    </Suspense>
   );
 }
