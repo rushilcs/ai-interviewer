@@ -149,6 +149,7 @@ If any step fails, see **Troubleshooting** below.
 ## Troubleshooting
 
 - **CORS / “blocked by CORS”:** Ensure `FRONTEND_ORIGIN` on Render exactly matches the origin of the page (e.g. `https://your-app.vercel.app`). No trailing slash. Redeploy backend after changing.
+- **Login returns "Failed to fetch":** (1) DevTools → Network: try login, find the request to `.../api/auth/login` — check Request URL (must be Render) and Status (blocked = CORS; (failed) = unreachable/timeout). (2) Open `https://<your-render>.onrender.com/health` in a new tab; expect `{"ok":true}` (free tier can be slow on first request). (3) Vercel: `NEXT_PUBLIC_BACKEND_URL` = Render URL, no trailing slash; redeploy. (4) Render: `FRONTEND_ORIGIN` = exact Vercel origin; redeploy.
 - **Invite link goes to localhost:** Backend builds invite links from `INVITE_BASE_URL`. Set it to the Vercel URL and redeploy.
 - **401 on API calls:** Frontend must send requests to the backend URL set in `NEXT_PUBLIC_BACKEND_URL`. Check Vercel env and rebuild/redeploy the frontend so the value is baked in.
 - **Database connection errors:** Use the **Internal Database URL** from Render for `DATABASE_URL` so the Web Service and DB are on the same network. If you run migrations/seed from your machine, use the **external** URL and ensure your IP is allowed if the DB has network restrictions.
