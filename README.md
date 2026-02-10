@@ -118,12 +118,12 @@ Interviews, users, invites, and evaluation results are stored in **PostgreSQL**.
 ## Project layout
 
 | Path | Description |
-|-----|-------------|
-| `frontend/` | Next.js (App Router) + React + TypeScript + Tailwind — interview and coding UI |
-| `backend/` | Express API — auth, talent interview flow, coding (problems, draft, run, submit) |
-| `services/runner/` | Code runner used by the backend to execute submissions in Docker |
+|------|-------------|
+| `frontend/` | Next.js (App Router), React, TypeScript, Tailwind — interview and ops UI |
+| `backend/` | Express API — auth, interview flow, evaluation, coding (draft, run, submit) |
+| `services/runner/` | Code runner for executing submissions in Docker (optional) |
 | `packages/shared/` | Shared types for the coding API |
-| `docs/` | Interview schema and mock specs |
+| `docs/` | Interview schema and interview specs (see `docs/README.md`) |
 
 ---
 

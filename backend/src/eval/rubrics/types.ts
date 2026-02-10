@@ -1,6 +1,9 @@
 /**
- * Rubric config interface for interview-specific evaluation.
- * To add a new interview eval: create a rubric file that implements this and register by schemaVersion.
+ * Rubric config for interview-specific LLM judge evaluation.
+ *
+ * To add a new interview: (1) add a rubric file in this directory exporting a RubricConfig
+ * (schemaVersion, sections with base_rubric_prompt, followup_scoring_rules, optional anchors);
+ * (2) register it in getRubricConfig() below by schemaVersion.
  */
 
 export type SectionRubricConfig = {

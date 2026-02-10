@@ -1,8 +1,4 @@
-/**
- * Canonical interview specification — Mock Interview 1 (mle-v1).
- * Source of truth: docs/interviews/mock-1.md
- * Do not change wording or structure; use for orchestration and UI.
- */
+/** Interview spec mle-v1. Source of truth: docs/interviews/mock-1.md */
 
 export type FollowUpIntent = {
   name: string;
