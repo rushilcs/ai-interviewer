@@ -1,4 +1,7 @@
-export const BACKEND_URL = "http://localhost:4000";
+/** Backend API base URL. Set NEXT_PUBLIC_BACKEND_URL in production (e.g. Vercel env). */
+export const BACKEND_URL =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_BACKEND_URL) ||
+  "http://localhost:4000";
 
 export type ApiError = { status: number; message: string };
 

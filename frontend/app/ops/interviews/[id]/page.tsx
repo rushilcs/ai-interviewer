@@ -85,7 +85,25 @@ type EvaluationResponse = {
   created_at: string;
 };
 
+const METRIC_LABELS: Record<string, string> = {
+  problem_decomposition: "Section 1: Problem Decomposition",
+  modeling_judgment: "Section 2: Modeling Judgment",
+  system_design_reasoning: "Section 3: System Design",
+  implementation_quality: "Section 4: Coding",
+  reflection_maturity: "Section 5: Reflection & Judgment"
+};
+
+const SECTION_LABELS: Record<string, string> = {
+  section_1: "Section 1: Problem Framing & Success Definition",
+  section_2: "Section 2: Modeling Strategy & Tradeoffs",
+  section_3: "Section 3: System Design & Failure Modes",
+  section_coding: "Section 4: Coding",
+  section_4: "Section 5: Reflection & Judgment"
+};
+
 function formatMetricName(name: string): string {
+  const mapped = METRIC_LABELS[name];
+  if (mapped) return mapped;
   return name
     .split("_")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
@@ -94,7 +112,6 @@ function formatMetricName(name: string): string {
 
 function EvaluationTextView({ data }: { data: EvaluationResponse }) {
   const metrics = Array.isArray(data.metrics) ? data.metrics : [];
-  const sections = Array.isArray(data.sections) ? data.sections : [];
 
   return (
     <div className="space-y-6 text-sm text-text">
@@ -154,51 +171,6 @@ function EvaluationTextView({ data }: { data: EvaluationResponse }) {
           ))}
         </ul>
       </div>
-
-      {/* Sections */}
-      {sections.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase text-muted tracking-wide">Sections</h3>
-          <ul className="space-y-4">
-            {sections.map((sec) => (
-              <li key={sec.section_id} className="rounded-[10px] border border-border bg-surface2 px-4 py-3">
-                <p className="font-medium text-text">{sec.section_id.replace(/_/g, " ")}</p>
-                {sec.summary && (
-                  <p className="text-muted mt-1 text-xs">{sec.summary}</p>
-                )}
-                {sec.signals && sec.signals.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-xs font-medium text-muted mb-1">Signals</p>
-                    <ul className="space-y-1 text-xs">
-                      {sec.signals.map((s) => (
-                        <li key={s.name}>
-                          <span className="text-text">{formatMetricName(s.name)}</span>
-                          <span className="text-muted"> = {s.value}</span>
-                          {s.evidence && s.evidence.length > 0 && s.evidence[0].quote && (
-                            <span className="text-muted ml-1"> — "{s.evidence[0].quote}"</span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {sec.metrics && sec.metrics.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <p className="text-xs font-medium text-muted mb-1">Section metrics</p>
-                    <ul className="space-y-0.5 text-xs text-muted">
-                      {sec.metrics.map((sm) => (
-                        <li key={sm.name}>
-                          {formatMetricName(sm.name)}: <span className="text-text">{sm.value.toFixed(2)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
@@ -360,7 +332,7 @@ export default function OpsInterviewDetailPage() {
                   {replay.sections?.map((sec) => (
                     <div key={sec.section_id}>
                       <h3 className="text-sm font-medium text-muted mb-2 uppercase">
-                        {sec.section_id.replace(/_/g, " ")}
+                        {SECTION_LABELS[sec.section_id] ?? sec.section_id.replace(/_/g, " ")}
                       </h3>
                       <div className="space-y-2">
                         {[...(sec.prompts ?? []), ...(sec.messages ?? [])]

@@ -6,7 +6,10 @@ import { opsInterviewsRouter } from "./routes/ops/interviews";
 import { talentRouter } from "./routes/talent";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler";
 
-const ALLOWED_ORIGIN = process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
+const ALLOWED_ORIGINS = (process.env.FRONTEND_ORIGIN ?? "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 export function createApp() {
   const app = express();
@@ -14,7 +17,7 @@ export function createApp() {
 
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin === ALLOWED_ORIGIN || origin === "http://localhost:3000") {
+    if (origin && (ALLOWED_ORIGINS.includes(origin) || origin === "http://localhost:3000")) {
       res.setHeader("Access-Control-Allow-Origin", origin);
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");

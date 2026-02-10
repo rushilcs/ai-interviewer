@@ -7,7 +7,7 @@ Build a clean, consistent, enterprise-style UI for “AI Interviewer” with zer
 - Next.js App Router + TypeScript + Tailwind.
 - No component libraries (no shadcn, no Mantine). Build minimal primitives in /components/ui.
 - Polling only (no websockets).
-- Backend base URL: http://localhost:4000.
+- Backend base URL: http://localhost:4000 (local). In production set via NEXT_PUBLIC_BACKEND_URL.
 - Store ops JWT in localStorage.
 - Invite token always comes from URL query (?token=...).
 

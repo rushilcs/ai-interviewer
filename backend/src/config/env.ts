@@ -14,6 +14,8 @@ const envSchema = z.object({
   OPS_ADMIN_EMAIL: z.string().email().default("ops-admin@example.com"),
   OPS_ADMIN_PASSWORD: z.string().min(8).default("ops-admin-password"),
   INVITE_BASE_URL: z.string().url().default("http://localhost:3000"),
+  /** Comma-separated origins for CORS (e.g. https://yourapp.vercel.app). */
+  FRONTEND_ORIGIN: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().optional()
 });

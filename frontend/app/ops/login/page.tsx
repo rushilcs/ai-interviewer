@@ -6,8 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Banner } from "@/components/ui/Banner";
-
-const BACKEND_URL = "http://localhost:4000";
+import { BACKEND_URL } from "@/lib/api";
 
 export default function OpsLoginPage() {
   const router = useRouter();
