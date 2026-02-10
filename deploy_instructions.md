@@ -43,7 +43,7 @@ This guide walks you through deploying the AI Interviewer app with the **fronten
    - **Root Directory:** `backend`
    - **Runtime:** `Node`
    - **Build Command:** `npm install`
-   - **Start Command:** `npm run start` (or `npx tsx src/server.ts` if you don’t have a built dist; the repo uses `tsx src/server.ts` in `package.json` so `npm run start` is correct.)
+   - **Start Command:** `npm run migrate && npm run start`. On the free tier, Pre-Deploy and Release Command are often unavailable; running migrations in the Start Command ensures the DB is migrated before the server starts. Migrations are idempotent (safe to run repeatedly).
 4. **Instance type:** Free is fine for a demo.
 
 ### 1.3 Environment variables (Render Web Service)
@@ -64,15 +64,13 @@ In the Web Service → **Environment** tab, add:
 
 **Important:** Set `INVITE_BASE_URL` and `FRONTEND_ORIGIN` to the **exact** Vercel URL (e.g. `https://ai-interviewer-xxx.vercel.app`). You can add the Vercel URL after you deploy the frontend (step 2); then update these and redeploy the Web Service if needed.
 
-### 1.4 Migrations and seed (one-time)
+### 1.4 Migrations and seed
 
-Render can run a **release command** before each deploy. Use it to run migrations:
+**Migrations** are already covered if you set the Start Command to `npm run migrate && npm run start` (step 1.2). That runs migrations every time the service starts; re-running them is safe.
 
-1. In the Web Service → **Settings** → **Build & Deploy**:
-   - **Release Command:** `npm run migrate`  
-     (Or `npx tsx src/db/migrate.ts` if your script name differs; the repo has `npm run migrate` → `tsx src/db/migrate.ts`.)
+If you have access to **Release Command** (Settings → Build & Deploy), you can optionally use `npm run migrate` there instead and keep Start Command as `npm run start`. On the free tier, Pre-Deploy is locked and Release Command may not be available, so using the combined Start Command is the recommended approach.
 
-2. **Seed the database** once (creates ops admin and roles):
+**Seed the database** once (creates ops admin and roles):
    - Use **Render Shell** (Web Service → **Shell** tab), or run locally with `DATABASE_URL` set to the **external** connection string (if you need to run from your machine):
    ```bash
    cd backend
@@ -80,7 +78,7 @@ Render can run a **release command** before each deploy. Use it to run migration
    npm run migrate
    npm run seed
    ```
-   If using Render Shell: `cd backend` (if needed), then `npm run seed` (migrations usually already ran via release command). Ensure `DATABASE_URL`, `OPS_ADMIN_EMAIL`, and `OPS_ADMIN_PASSWORD` are set in the service so `seed` uses them.
+   If using Render Shell: `cd backend` (if needed), then `npm run seed` (migrations will have run when the service started). Ensure `DATABASE_URL`, `OPS_ADMIN_EMAIL`, and `OPS_ADMIN_PASSWORD` are set in the service so `seed` uses them.
 
 3. After the first deploy, open the Web Service URL (e.g. `https://ai-interviewer-api.onrender.com`) and check:
    - `https://<your-backend>.onrender.com/health` → `{"ok":true}`.

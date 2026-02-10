@@ -3,9 +3,11 @@
 import { type ButtonHTMLAttributes, forwardRef } from "react";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Size = "sm" | "md" | "lg";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
+  size?: Size;
 }
 
 const variantClasses: Record<Variant, string> = {
@@ -19,15 +21,22 @@ const variantClasses: Record<Variant, string> = {
     "bg-danger text-white hover:opacity-90 focus:ring-2 focus:ring-danger focus:ring-offset-2 focus:ring-offset-bg border border-transparent",
 };
 
+const sizeClasses: Record<Size, string> = {
+  sm: "h-8 px-3 text-xs",
+  md: "h-9 rounded-[10px] px-4 text-sm font-medium",
+  lg: "h-10 px-5 text-base font-medium rounded-[10px]",
+};
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className = "", variant = "primary", disabled, ...props }, ref) => {
+  ({ className = "", variant = "primary", size = "md", disabled, ...props }, ref) => {
     return (
       <button
         ref={ref}
         className={`
-          h-9 rounded-[10px] px-4 text-sm font-medium
+          rounded-[10px]
           transition-colors duration-150
           disabled:opacity-50 disabled:cursor-not-allowed
+          ${sizeClasses[size]}
           ${variantClasses[variant]}
           ${className}
         `}
