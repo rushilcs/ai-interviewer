@@ -18,12 +18,60 @@ type ReplaySection = {
   prompts: { seq: number; prompt_id: string; text: string; created_at: string }[];
 };
 
+type CodingSubmissionEntry = {
+  seq: number;
+  problem_id: string;
+  code_text: string;
+  language: string;
+  created_at: string;
+};
+
+type CodingTestResultEntry = {
+  seq: number;
+  problem_id: string;
+  passed: number;
+  total: number;
+  created_at: string;
+};
+
 type ReplayResponse = {
   interview_id: string;
   sections: ReplaySection[];
   assistant_usage: { seq: number; query: string; response?: string; blocked?: boolean }[];
   section_timing: { section_id: string; started_at?: string; ended_at?: string; duration_seconds?: number }[];
   disconnect_count: number;
+  coding_submissions?: CodingSubmissionEntry[];
+  coding_test_results?: CodingTestResultEntry[];
+};
+
+type EvidencePointer = {
+  type?: string;
+  section_id?: string | null;
+  from_seq?: number;
+  to_seq?: number;
+  quote?: string;
+};
+
+type MetricOutput = {
+  name: string;
+  value: number;
+  scale?: string;
+  explanation?: string;
+  evidence?: EvidencePointer[];
+};
+
+type SignalOutput = {
+  name: string;
+  value: number;
+  explanation?: string;
+  evidence?: EvidencePointer[];
+};
+
+type SectionEvaluation = {
+  section_id: string;
+  summary?: string;
+  signals?: SignalOutput[];
+  metrics?: MetricOutput[];
 };
 
 type EvaluationResponse = {
@@ -31,11 +79,129 @@ type EvaluationResponse = {
   evaluation_version: string;
   overall_score: number | null;
   overall_band: string | null;
-  metrics: unknown;
-  sections: unknown;
-  signals: unknown;
+  metrics: MetricOutput[];
+  sections: SectionEvaluation[];
+  signals?: unknown;
   created_at: string;
 };
+
+function formatMetricName(name: string): string {
+  return name
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function EvaluationTextView({ data }: { data: EvaluationResponse }) {
+  const metrics = Array.isArray(data.metrics) ? data.metrics : [];
+  const sections = Array.isArray(data.sections) ? data.sections : [];
+
+  return (
+    <div className="space-y-6 text-sm text-text">
+      {/* Overall */}
+      <div className="space-y-1">
+        <h3 className="text-xs font-semibold uppercase text-muted tracking-wide">Overall</h3>
+        <div className="rounded-[10px] border border-border bg-surface2 px-4 py-3 space-y-1">
+          <p>
+            <span className="text-muted">Score: </span>
+            <span className="font-medium">
+              {data.overall_score != null ? data.overall_score.toFixed(2) : "—"}
+            </span>
+            {data.overall_score != null && (
+              <span className="text-muted ml-2">(scale 0–1)</span>
+            )}
+          </p>
+          <p>
+            <span className="text-muted">Band: </span>
+            <span className="font-medium">{data.overall_band ?? "—"}</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Metrics (subscores) */}
+      <div className="space-y-2">
+        <h3 className="text-xs font-semibold uppercase text-muted tracking-wide">Metrics</h3>
+        <ul className="space-y-3">
+          {metrics.map((m) => (
+            <li key={m.name} className="rounded-[10px] border border-border bg-surface2 px-4 py-3">
+              <p className="font-medium text-text">{formatMetricName(m.name)}</p>
+              <p className="text-muted mt-0.5">
+                Value: <span className="text-text">{m.value.toFixed(2)}</span>
+                {m.scale && <span className="ml-1">({m.scale})</span>}
+              </p>
+              {m.explanation && (
+                <p className="text-muted mt-1 text-xs">{m.explanation}</p>
+              )}
+              {m.evidence && m.evidence.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-border">
+                  <p className="text-xs font-medium text-muted mb-1">Evidence</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-xs text-muted">
+                    {m.evidence.map((e, i) => (
+                      <li key={i}>
+                        {e.quote ? (
+                          <span className="text-text">"{e.quote}"</span>
+                        ) : (
+                          <span>
+                            {e.section_id ?? "—"} seq {e.from_seq ?? "?"}–{e.to_seq ?? "?"}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Sections */}
+      {sections.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase text-muted tracking-wide">Sections</h3>
+          <ul className="space-y-4">
+            {sections.map((sec) => (
+              <li key={sec.section_id} className="rounded-[10px] border border-border bg-surface2 px-4 py-3">
+                <p className="font-medium text-text">{sec.section_id.replace(/_/g, " ")}</p>
+                {sec.summary && (
+                  <p className="text-muted mt-1 text-xs">{sec.summary}</p>
+                )}
+                {sec.signals && sec.signals.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-muted mb-1">Signals</p>
+                    <ul className="space-y-1 text-xs">
+                      {sec.signals.map((s) => (
+                        <li key={s.name}>
+                          <span className="text-text">{formatMetricName(s.name)}</span>
+                          <span className="text-muted"> = {s.value}</span>
+                          {s.evidence && s.evidence.length > 0 && s.evidence[0].quote && (
+                            <span className="text-muted ml-1"> — "{s.evidence[0].quote}"</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {sec.metrics && sec.metrics.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <p className="text-xs font-medium text-muted mb-1">Section metrics</p>
+                    <ul className="space-y-0.5 text-xs text-muted">
+                      {sec.metrics.map((sm) => (
+                        <li key={sm.name}>
+                          {formatMetricName(sm.name)}: <span className="text-text">{sm.value.toFixed(2)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function OpsInterviewDetailPage() {
   const params = useParams();
@@ -169,19 +335,9 @@ export default function OpsInterviewDetailPage() {
             <div className="p-4">
               {evalError && <Banner variant="error" className="mb-4">{evalError}</Banner>}
               {evaluation ? (
-                <pre className="text-xs text-text bg-surface2 border border-border rounded-[10px] p-4 overflow-auto max-h-[400px] whitespace-pre-wrap font-mono">
-                  {JSON.stringify(
-                    {
-                      evaluation_version: evaluation.evaluation_version,
-                      overall_score: evaluation.overall_score,
-                      overall_band: evaluation.overall_band,
-                      metrics: evaluation.metrics,
-                      sections: evaluation.sections,
-                    },
-                    null,
-                    2
-                  )}
-                </pre>
+                <div className="overflow-auto max-h-[500px] pr-2">
+                  <EvaluationTextView data={evaluation} />
+                </div>
               ) : (
                 <p className="text-muted text-sm">
                   No evaluation yet. Run evaluation when interview is completed.
@@ -204,7 +360,7 @@ export default function OpsInterviewDetailPage() {
                   {replay.sections?.map((sec) => (
                     <div key={sec.section_id}>
                       <h3 className="text-sm font-medium text-muted mb-2 uppercase">
-                        {sec.section_id}
+                        {sec.section_id.replace(/_/g, " ")}
                       </h3>
                       <div className="space-y-2">
                         {[...(sec.prompts ?? []), ...(sec.messages ?? [])]
@@ -231,6 +387,43 @@ export default function OpsInterviewDetailPage() {
                       </div>
                     </div>
                   ))}
+                  {(replay.coding_submissions?.length ?? 0) > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-muted mb-2 uppercase">
+                        Coding — Submissions & test results
+                      </h3>
+                      <div className="space-y-4">
+                        {replay.coding_submissions?.map((sub, i) => {
+                          const result = replay.coding_test_results?.find(
+                            (r) => r.problem_id === sub.problem_id
+                          );
+                          return (
+                            <div
+                              key={i}
+                              className="rounded-[10px] border border-border bg-surface2 overflow-hidden"
+                            >
+                              <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+                                <span className="text-xs font-medium text-muted">
+                                  Problem: {sub.problem_id}
+                                </span>
+                                <span className="text-xs text-muted">
+                                  {sub.language}
+                                  {result != null && (
+                                    <span className="ml-2 text-text">
+                                      Tests: {result.passed}/{result.total}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                              <pre className="p-3 text-xs text-text overflow-auto max-h-[200px] whitespace-pre-wrap font-mono bg-surface">
+                                {sub.code_text}
+                              </pre>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   {replay.assistant_usage?.length > 0 && (
                     <div>
                       <h3 className="text-sm font-medium text-muted mb-2 uppercase">

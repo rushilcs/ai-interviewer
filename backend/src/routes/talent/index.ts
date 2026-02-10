@@ -15,13 +15,14 @@ import {
   insertEventInTx,
   updateInterviewDenormalized
 } from "../../services/orchestration/eventStore";
-import { loadSchema, getNextSectionId } from "../../services/orchestration/schema";
+import { loadSchema, getNextSectionId, getLastSectionId } from "../../services/orchestration/schema";
 import { buildInterviewSnapshot, type SnapshotEvent } from "../../services/orchestration/snapshot";
 import {
   decideNextPrompt,
   getLastCandidateMessageInSection,
   getRecentPromptTextsInSection,
-  getTranscriptForPreviousSections
+  getTranscriptForPreviousSections,
+  MAX_FOLLOWUPS_PER_SECTION
 } from "../../services/orchestration/interviewer";
 import { generateFollowUpQuestion } from "../../services/interviewer/followUp";
 import { getMock1Spec } from "../../specs/mock-1";
@@ -34,6 +35,31 @@ import { getProblemSummaries } from "../../coding/problems";
 import type { ReducedState } from "../../services/orchestration/state";
 
 const ENGINE_VERSION = "engine-v1";
+
+const THANK_YOU_PROMPT_TEXT =
+  "Thank you for completing the interview. You can close this tab now.";
+
+/** Shown when the interviewer has finished questions for the section (2–4 follow-ups). Unlocks next section. */
+const SECTION_QUESTIONS_FINISHED_TEXT =
+  "Questions have finished for this section. You can proceed to the next section when ready.";
+
+function isLastSectionFinished(
+  schema: import("../../services/orchestration/schema").InterviewSchemaDef,
+  sectionId: string,
+  events: { event_type: string; section_id: string | null; payload?: { section_id?: string } }[]
+): boolean {
+  const lastSectionId = getLastSectionId(schema);
+  if (!lastSectionId || sectionId !== lastSectionId) return false;
+  let promptCount = 0;
+  let hasSectionSatisfied = false;
+  for (const ev of events) {
+    const evSectionId = (ev.payload?.section_id as string) ?? ev.section_id ?? null;
+    if (evSectionId !== sectionId) continue;
+    if (ev.event_type === "PROMPT_PRESENTED") promptCount++;
+    if (ev.event_type === "INTERVIEWER_SECTION_SATISFIED") hasSectionSatisfied = true;
+  }
+  return hasSectionSatisfied || promptCount >= 1 + MAX_FOLLOWUPS_PER_SECTION;
+}
 
 function augmentSnapshotWithCoding(
   interviewId: string,
@@ -66,6 +92,18 @@ async function runInterviewerAndAppendIfNeeded(interviewId: string): Promise<voi
     return;
   }
 
+  if (decision.action === "mark_section_satisfied") {
+    await appendEvent(interviewId, "INTERVIEWER_AI", "INTERVIEWER_SECTION_SATISFIED", {
+      section_id: decision.section_id
+    });
+    await appendEvent(interviewId, "INTERVIEWER_AI", "PROMPT_PRESENTED", {
+      prompt_id: `${decision.section_id}_questions_finished`,
+      prompt_text: SECTION_QUESTIONS_FINISHED_TEXT,
+      section_id: decision.section_id
+    });
+    return;
+  }
+
   if (decision.action === "ask_followup") {
     const lastMessage = getLastCandidateMessageInSection(decision.section_id, events);
     if (!lastMessage || !lastMessage.trim()) return;
@@ -84,6 +122,11 @@ async function runInterviewerAndAppendIfNeeded(interviewId: string): Promise<voi
       });
       if (text === null) {
         await appendEvent(interviewId, "INTERVIEWER_AI", "INTERVIEWER_SECTION_SATISFIED", {
+          section_id: decision.section_id
+        });
+        await appendEvent(interviewId, "INTERVIEWER_AI", "PROMPT_PRESENTED", {
+          prompt_id: `${decision.section_id}_questions_finished`,
+          prompt_text: SECTION_QUESTIONS_FINISHED_TEXT,
           section_id: decision.section_id
         });
         return;
@@ -375,6 +418,31 @@ talentRouter.post(
       const { state } = await getEventsAndState(interviewId);
       await updateInterviewDenormalized(interviewId, state);
       await runInterviewerAndAppendIfNeeded(interviewId);
+
+      // If we're in the last section and the interviewer has finished (satisfied or max follow-ups), show thank-you and complete immediately.
+      const { events: eventsAfter, state: stateAfter, schema_version: sv } = await getEventsAndState(interviewId);
+      const schemaAfter = loadSchema(sv);
+      if (
+        stateAfter.status === "IN_PROGRESS" &&
+        stateAfter.current_section_id &&
+        isLastSectionFinished(schemaAfter, stateAfter.current_section_id, eventsAfter)
+      ) {
+        const sectionId = stateAfter.current_section_id;
+        await appendEvent(interviewId, "INTERVIEWER_AI", "PROMPT_PRESENTED", {
+          prompt_id: `${sectionId}_thank_you`,
+          prompt_text: THANK_YOU_PROMPT_TEXT,
+          section_id: sectionId
+        });
+        await appendEvent(interviewId, "SYSTEM", "SECTION_ENDED", {
+          section_id: sectionId,
+          reason: "last_section_complete"
+        });
+        await appendEvent(interviewId, "SYSTEM", "INTERVIEW_COMPLETED", {});
+        await pool.query(
+          "UPDATE interviews SET status = 'COMPLETED', completed_at = NOW() WHERE id = $1",
+          [interviewId]
+        );
+      }
 
       res.json({
         ack: { server_seq: result.seq },
@@ -742,7 +810,8 @@ talentRouter.post(
         schemaAfter,
         stateAfter,
         eventsForSnapshot,
-        new Date().toISOString()
+        new Date().toISOString(),
+        eventsAfter
       );
       augmentSnapshotWithCoding(interviewId, stateAfter, snapshot as Record<string, unknown>);
       res.json(snapshot);

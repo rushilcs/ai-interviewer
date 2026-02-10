@@ -1,13 +1,14 @@
 /**
  * Run full evaluation pipeline and persist. Idempotent by evaluation_version.
+ * Uses LLM judge for non-coding sections (ess-v2) when schema is mle-v1; coding section is deterministic.
  */
 
 import { pool } from "../../db/pool";
 import { getEventsAndState } from "../orchestration/eventStore";
-import { extractSignals } from "./signalExtractor";
-import { computeMetrics } from "./metricComputer";
-import { buildSectionSummaries } from "./sectionSummaries";
-import { computeOverallScoreAndBand } from "./aggregate";
+import {
+  runLLMJudgeEvaluation,
+  mapJudgeOutputToEvaluationOutput
+} from "./llmJudgeEvaluator";
 import {
   type EvaluationOutput,
   type MetricOutput,
@@ -15,6 +16,8 @@ import {
   SIGNAL_DEFS_VERSION,
   METRIC_WEIGHTS_VERSION
 } from "./types";
+import { getRubricConfig } from "../../eval/rubrics/types";
+import { env } from "../../config/env";
 
 export class EvaluationNotCompletedError extends Error {
   constructor(public interviewId: string) {
@@ -54,41 +57,16 @@ export async function runEvaluation(interview_id: string): Promise<EvaluationOut
     const sections = (r.section_results_json as EvaluationOutput["sections"]) ?? [];
     const { events } = await getEventsAndState(interview_id);
     const context = buildContext(events);
+    let overall_score = r.overall_score != null ? Number(r.overall_score) : null;
+    let overall_band = r.overall_band;
+    if (overall_score == null && overall_band == null && metrics.length >= 5) {
+      const computed = computeOverallScoreAndBand(metrics, false);
+      overall_score = computed.overall_score;
+      overall_band = computed.overall_band;
+    }
     return {
       interview_id,
       evaluation_version: r.evaluation_version,
-      signal_defs_version: SIGNAL_DEFS_VERSION,
-      metric_weights_version: METRIC_WEIGHTS_VERSION,
-      overall_score: r.overall_score != null ? Number(r.overall_score) : null,
-      overall_band: r.overall_band,
-      metrics,
-      sections,
-      context
-    };
-  }
-
-  const { events, state } = await getEventsAndState(interview_id);
-  if (state.status !== "COMPLETED") {
-    throw new EvaluationNotCompletedError(interview_id);
-  }
-
-  const hasCodeSection = events.some((e) => e.section_id === "section_coding" && e.event_type === "CANDIDATE_CODE_SUBMITTED");
-
-  await pool.query(
-    "INSERT INTO evaluation_jobs (interview_id, status, evaluation_version, started_at) VALUES ($1, 'RUNNING', $2, NOW()) ON CONFLICT (interview_id) DO UPDATE SET status = 'RUNNING', started_at = NOW()",
-    [interview_id, EVALUATION_VERSION]
-  );
-
-  try {
-    const signals = extractSignals(events);
-    const { metrics, implementationQualityNull } = computeMetrics(signals, hasCodeSection);
-    const sections = buildSectionSummaries(signals, events, metrics);
-    const { overall_score, overall_band } = computeOverallScoreAndBand(metrics, implementationQualityNull);
-    const context = buildContext(events);
-
-    const output: EvaluationOutput = {
-      interview_id,
-      evaluation_version: EVALUATION_VERSION,
       signal_defs_version: SIGNAL_DEFS_VERSION,
       metric_weights_version: METRIC_WEIGHTS_VERSION,
       overall_score,
@@ -97,6 +75,61 @@ export async function runEvaluation(interview_id: string): Promise<EvaluationOut
       sections,
       context
     };
+  }
+
+  const { events, state, schema_version } = await getEventsAndState(interview_id);
+  if (state.status !== "COMPLETED") {
+    throw new EvaluationNotCompletedError(interview_id);
+  }
+
+  const rubric = getRubricConfig(schema_version);
+  const useLLMJudge =
+    rubric != null &&
+    !!env.OPENAI_API_KEY &&
+    process.env.NODE_ENV !== "test";
+
+  await pool.query(
+    "INSERT INTO evaluation_jobs (interview_id, status, evaluation_version, started_at) VALUES ($1, 'RUNNING', $2, NOW()) ON CONFLICT (interview_id) DO UPDATE SET status = 'RUNNING', started_at = NOW()",
+    [interview_id, EVALUATION_VERSION]
+  );
+
+  try {
+    let output: EvaluationOutput;
+
+    let signalsJson: unknown = [];
+    if (useLLMJudge) {
+      const { output: judgeOutput } = await runLLMJudgeEvaluation(schema_version, events);
+      const context = buildContext(events);
+      output = mapJudgeOutputToEvaluationOutput(interview_id, judgeOutput, context, EVALUATION_VERSION);
+      output.signal_defs_version = SIGNAL_DEFS_VERSION;
+      output.metric_weights_version = METRIC_WEIGHTS_VERSION;
+    } else {
+      const { extractSignals } = await import("./signalExtractor");
+      const { computeMetrics } = await import("./metricComputer");
+      const { buildSectionSummaries } = await import("./sectionSummaries");
+      const { computeOverallScoreAndBand } = await import("./aggregate");
+      const signals = extractSignals(events);
+      const hasCodeSection = events.some((e) => e.section_id === "section_coding" && e.event_type === "CANDIDATE_CODE_SUBMITTED");
+      const { metrics, implementationQualityNull } = computeMetrics(signals, hasCodeSection);
+      if (metrics.length !== 5) {
+        throw new Error(`Expected 5 metrics, got ${metrics.length}`);
+      }
+      const sections = buildSectionSummaries(signals, events, metrics);
+      const { overall_score, overall_band } = computeOverallScoreAndBand(metrics, implementationQualityNull);
+      const context = buildContext(events);
+      output = {
+        interview_id,
+        evaluation_version: EVALUATION_VERSION,
+        signal_defs_version: SIGNAL_DEFS_VERSION,
+        metric_weights_version: METRIC_WEIGHTS_VERSION,
+        overall_score,
+        overall_band,
+        metrics,
+        sections,
+        context
+      };
+      signalsJson = signals;
+    }
 
     await pool.query(
       `INSERT INTO evaluation_results (interview_id, evaluation_version, overall_score, overall_band, metrics_json, section_results_json, signals_json)
@@ -110,12 +143,12 @@ export async function runEvaluation(interview_id: string): Promise<EvaluationOut
          signals_json = EXCLUDED.signals_json`,
       [
         interview_id,
-        EVALUATION_VERSION,
+        output.evaluation_version as string,
         output.overall_score,
         output.overall_band,
         JSON.stringify(output.metrics),
         JSON.stringify(output.sections),
-        JSON.stringify(signals)
+        JSON.stringify(signalsJson)
       ]
     );
     await pool.query(

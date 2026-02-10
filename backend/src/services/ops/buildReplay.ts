@@ -26,6 +26,22 @@ export type ReplayTimingEntry = {
   duration_seconds?: number;
 };
 
+export type CodingSubmissionEntry = {
+  seq: number;
+  problem_id: string;
+  code_text: string;
+  language: string;
+  created_at: string;
+};
+
+export type CodingTestResultEntry = {
+  seq: number;
+  problem_id: string;
+  passed: number;
+  total: number;
+  created_at: string;
+};
+
 export type ReplayBundle = {
   interview_id: string;
   transcript_by_section: ReplaySection[];
@@ -34,6 +50,10 @@ export type ReplayBundle = {
   assistant_usage: ReplayAssistantEntry[];
   timing_per_section: ReplayTimingEntry[];
   disconnects: number;
+  /** Coding section: submitted code per problem */
+  coding_submissions: CodingSubmissionEntry[];
+  /** Coding section: test run result per submission */
+  coding_test_results: CodingTestResultEntry[];
 };
 
 export async function buildReplay(interviewId: string): Promise<ReplayBundle> {
@@ -44,6 +64,8 @@ export async function buildReplay(interviewId: string): Promise<ReplayBundle> {
     { messages: ReplayMessage[]; prompts: ReplayPrompt[] }
   > = {};
   const assistantUsage: ReplayAssistantEntry[] = [];
+  const codingSubmissions: CodingSubmissionEntry[] = [];
+  const codingTestResults: CodingTestResultEntry[] = [];
   const sectionIds = new Set<string>();
   let disconnect_count = 0;
 
@@ -51,6 +73,24 @@ export async function buildReplay(interviewId: string): Promise<ReplayBundle> {
     if (e.section_id) sectionIds.add(e.section_id);
     if (e.event_type === "CLIENT_DISCONNECTED" || e.event_type === "CLIENT_RECONNECTED")
       disconnect_count++;
+    if (e.section_id === "section_coding" && e.event_type === "CANDIDATE_CODE_SUBMITTED") {
+      codingSubmissions.push({
+        seq: e.seq,
+        problem_id: (e.payload?.problem_id as string) ?? "",
+        code_text: (e.payload?.code_text as string) ?? "",
+        language: (e.payload?.language as string) ?? "",
+        created_at: e.created_at
+      });
+    }
+    if (e.section_id === "section_coding" && e.event_type === "CODE_TESTS_RESULT") {
+      codingTestResults.push({
+        seq: e.seq,
+        problem_id: (e.payload?.problem_id as string) ?? "",
+        passed: Number(e.payload?.passed ?? 0),
+        total: Number(e.payload?.total ?? 0),
+        created_at: e.created_at
+      });
+    }
   }
 
   for (const sid of sectionIds) {
@@ -126,6 +166,8 @@ export async function buildReplay(interviewId: string): Promise<ReplayBundle> {
     prompts,
     assistant_usage: assistantUsage,
     timing_per_section,
-    disconnects: disconnect_count
+    disconnects: disconnect_count,
+    coding_submissions: codingSubmissions,
+    coding_test_results: codingTestResults
   };
 }

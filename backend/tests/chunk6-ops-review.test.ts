@@ -33,7 +33,7 @@ async function completeInterviewAndEvaluate(app: ReturnType<typeof createApp>) {
   await request(app)
     .post(`/api/talent/interviews/${interviewId}/start`)
     .set("X-Invite-Token", token);
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= 5; i++) {
     await request(app)
       .post(`/api/talent/interviews/${interviewId}/messages`)
       .set("X-Invite-Token", token)

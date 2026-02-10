@@ -1,71 +1,162 @@
 # AI Interviewer
 
-ML mock interview app with an interview flow and a LeetCode-style coding section.
+An ML mock interview app with a guided interview flow and a LeetCode-style coding section. **Ops** (interviewers) log in to create invites and review sessions; **candidates** use invite links to take the interview and complete coding problems.
+
+---
+
+## Prerequisites
+
+- **Node.js** 18 or later  
+- **PostgreSQL** (for the backend)  
+- **Docker** (optional; required only if you want the coding section’s Run/Submit to execute code in a sandbox)
+
+---
 
 ## Getting started
 
-### Prerequisites
+### 1. Database
 
-- Node 18+
-- Docker (required for the coding runner: sandboxed execution)
-- PostgreSQL (for backend)
-
-### Start services
-
-1. **Backend** (from repo root):
-   ```bash
-   cd backend && npm install && npm run dev
-   ```
-   Backend runs at `http://localhost:4000`.
-
-2. **Frontend** (from repo root):
-   ```bash
-   cd frontend && npm install && npm run dev
-   ```
-   Frontend runs at `http://localhost:3000`.
-
-3. **Database**: run migrations and seed (see backend README or `backend/.env.example`).
-
-### Coding environment
-
-The coding section uses a **Docker-based runner** to execute untrusted code in a sandbox (no network, 256MB memory, per-test timeout 500ms). Ensure **Docker is installed and running** before using Run/Submit.
-
-- **Runner** (build once): from repo root, `cd services/runner && npm install && npm run build`.
-- The backend imports the runner and runs code in Docker when you call `POST /api/talent/interviews/:id/coding/run` or `.../submit`.
-
-**Coding API (talent token required)**
-
-- `GET /api/talent/interviews/:interview_id/coding/problems?token=...` — list problems (NDCG@K, Rerank with author cap).
-- `GET /api/talent/interviews/:interview_id/coding/draft?problem_id=...&language=...&token=...` — get saved draft.
-- `PUT /api/talent/interviews/:interview_id/coding/draft` — body `{ problem_id, language, code }` — autosave draft.
-- `POST /api/talent/interviews/:interview_id/coding/run` — body `{ problem_id, language, code }` — run **public** tests only; returns per-test results (pass/fail, runtime, expected/actual truncated).
-- `POST /api/talent/interviews/:interview_id/coding/submit` — same body — runs **public + hidden** tests; returns summary only (e.g. `Passed 8/10`, status).
-
-**Example curl (run)**
-
-Replace `INTERVIEW_ID` and `TOKEN` with a real interview id and talent invite token from your session.
+Create a PostgreSQL database (e.g. `ai_interviewer`):
 
 ```bash
-curl -X POST "http://localhost:4000/api/talent/interviews/INTERVIEW_ID/coding/run?token=TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"problem_id":"ndcg_at_k","language":"python","code":"def ndcg_at_k(predicted_ids, relevance_map, k):\n    return 1.0"}'
+createdb ai_interviewer
 ```
 
-Response shape: `{ run_id, results: [{ test_id, test_index, pass, actual, expected, runtime_ms, error, timed_out? }], summary: { passed, total }, compile_error? }`.
+(Or create it via your DB tool.)
 
-**Rate limit:** 10 runs (run + submit) per minute per invite.
+### 2. Backend environment
+
+From the repo root:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env` and set at least:
+
+- **`DATABASE_URL`** — your Postgres connection string (e.g. `postgresql://user:password@127.0.0.1:5432/ai_interviewer`)
+- **`JWT_SECRET`** — a long random string for signing ops JWTs  
+- **`OPS_ADMIN_EMAIL`** and **`OPS_ADMIN_PASSWORD`** — the ops admin account you’ll use to log in (e.g. `ops-admin@example.com` / `ops-admin-password`)
+
+Optional:
+
+- **`INVITE_BASE_URL`** — base URL for invite links (default `http://localhost:3000`)  
+- **`OPENAI_API_KEY`** and **`OPENAI_MODEL`** — for the in-interview Assistant (concept questions only)
+
+### 3. Migrate and seed
+
+```bash
+cd backend
+npm install
+npm run migrate
+npm run seed
+```
+
+This applies DB migrations and creates the seeded ops admin user (and roles). You can run `npm run seed` again anytime to reset the ops admin password to match `.env`.
+
+### 4. Start the backend
+
+```bash
+cd backend
+npm run dev
+```
+
+Backend runs at **http://localhost:4000**.
+
+### 5. Start the frontend
+
+In a new terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend runs at **http://localhost:3000**.
+
+### 6. (Optional) Coding runner
+
+If you want **Run** and **Submit** in the coding section to execute code (in Docker):
+
+```bash
+cd services/runner
+npm install
+npm run build
+```
+
+Ensure Docker is installed and running. Without this, the coding UI still works but Run/Submit will fail.
+
+---
+
+## Data persistence
+
+Interviews, users, invites, and evaluation results are stored in **PostgreSQL**. They persist across closing the app, restarting the backend or frontend, and rebooting your machine—as long as the database process is running and the data directory is intact. The app does not keep any of this data in memory; closing the application does not delete past interviews.
+
+## Using the app
+
+### Ops (interviewers)
+
+1. Open **http://localhost:3000** and click **Ops Login** (or go to `/ops/login`).
+2. Log in with the **OPS_ADMIN_EMAIL** and **OPS_ADMIN_PASSWORD** from `backend/.env`.
+3. After login you’re on **Ops → Interviews**. Use **Invites** in the nav to create invite links.
+4. On **Invites**: choose a role, optionally set candidate email, create an invite, then copy the **invite URL** and share it with the candidate.
+
+### Candidates (interviewees)
+
+1. Open the **invite URL** from Ops (e.g. `http://localhost:3000/interview?token=...`).
+2. Start the interview when ready. You’ll go through timed sections (e.g. ML discussion, then Coding).
+3. In the **Coding** section you can open the full coding environment, work on two problems, **Run** as often as you like, and **Submit** once per problem (after submit, that problem’s code is locked). When both are submitted (or you choose to move on), you can proceed to the next section.
+4. You can use **Assistant** during the interview for concept-only questions (no solutions).
+
+### After the interview
+
+- Ops can open **Interviews**, select a session, and use **Review** / **Replay** and exports as needed.
+
+---
 
 ## Project layout
 
-- `frontend/` — Next.js (App Router) + React + TypeScript + Tailwind; interview and coding UI.
-- `backend/` — Express API: auth, talent interview flow, coding routes (problems, draft, run, submit).
-- `services/runner/` — Node runner: generates harness, runs code in Docker (Python supported; Java/C++ stubbed).
-- `packages/shared/` — Shared types for coding (request/response, problem summary).
-- `docs/interviews/mock-1.md` — Interview + coding section spec (problems, tests, signatures).
+| Path | Description |
+|-----|-------------|
+| `frontend/` | Next.js (App Router) + React + TypeScript + Tailwind — interview and coding UI |
+| `backend/` | Express API — auth, talent interview flow, coding (problems, draft, run, submit) |
+| `services/runner/` | Code runner used by the backend to execute submissions in Docker |
+| `packages/shared/` | Shared types for the coding API |
+| `docs/` | Interview schema and mock specs |
 
-## Coding problems (seeded)
+---
 
-1. **NDCG@K** — `ndcg_at_k(predicted_ids, relevance_map, k)` → float; 5 public + 5 hidden tests; tolerance 1e-6.
-2. **Rerank with per-author cap** — `rerank_with_author_cap(items, k, cap)` → list of item_ids; 5 public + 5 hidden tests; exact match.
+## Testing (backend)
 
-UI route: `/interview/[id]/coding?token=...` (when in the Coding section, use “Open full coding environment” from the interview page).
+Backend tests **reset the database** (DROP/CREATE public schema) before each run. To avoid wiping your **dev data** (interviews, users, invites):
+
+1. In `backend/.env`, set **`TEST_DATABASE_URL`** (same user/host as `DATABASE_URL`, database name `ai_interviewer_test`). Example: `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/ai_interviewer_test`
+2. Create the test database once: `cd backend && npm run test:db:create`
+3. Run tests: `cd backend && npm run test`
+
+If you run tests **without** `TEST_DATABASE_URL`, the test run will **refuse** to reset the DB and will tell you to set it. If you previously ran tests without a test DB, that’s why dev interviews disappeared and you were logged out (the test run wiped the same DB the app uses).
+
+---
+
+## Environment reference (backend)
+
+| Variable | Required | Description |
+|---------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string (used by the app) |
+| `TEST_DATABASE_URL` | No | Separate DB for tests (recommended so tests don’t wipe dev data) |
+| `JWT_SECRET` | Yes | Secret for signing ops JWTs |
+| `OPS_ADMIN_EMAIL` | No | Ops admin email (default from `.env.example`) |
+| `OPS_ADMIN_PASSWORD` | No | Ops admin password (default from `.env.example`) |
+| `INVITE_BASE_URL` | No | Base URL for invite links (default `http://localhost:3000`) |
+| `OPENAI_API_KEY` | No | For in-interview Assistant |
+| `OPENAI_MODEL` | No | Model for Assistant (e.g. `gpt-4.1-mini`) |
+
+---
+
+## Coding section (reference)
+
+- **Problems (seeded):** NDCG@K and Rerank with per-author cap (Python; Java/C++ stubbed).
+- **Run** — runs public tests only; **Submit** — runs public + hidden tests. One submit per problem; code is locked after submit.
+- **Rate limit:** 10 run+submit calls per minute per invite.
+- Full coding API is documented in the code (e.g. `GET/PUT .../coding/draft`, `POST .../coding/run`, `POST .../coding/submit`).

@@ -55,6 +55,8 @@ export type InterviewSnapshot = {
   current_section_max_questions: number;
   /** Total number of sections in the interview. */
   total_sections: number;
+  /** True when interviewer has marked current section satisfied (questions finished; can proceed without warning). */
+  current_section_interviewer_satisfied: boolean;
 };
 
 export function buildInterviewSnapshot(
@@ -104,6 +106,15 @@ export function buildInterviewSnapshot(
       ? getSectionProgress(state.current_section_id, fullEvents)
       : { questions_asked_in_section: 0, max_questions_in_section: 1 };
 
+  const current_section_interviewer_satisfied =
+    state.current_section_id != null && fullEvents != null
+      ? fullEvents.some((ev) => {
+          if (ev.event_type !== "INTERVIEWER_SECTION_SATISFIED") return false;
+          const evSectionId = (ev.payload?.section_id as string) ?? ev.section_id ?? null;
+          return evSectionId === state.current_section_id;
+        })
+      : false;
+
   return {
     interview_id: interviewId,
     status: state.status,
@@ -125,6 +136,7 @@ export function buildInterviewSnapshot(
     recommended_action: getRecommendedAction(state, nowIso),
     current_section_questions_count: progress.questions_asked_in_section,
     current_section_max_questions: progress.max_questions_in_section,
-    total_sections: schema.sections.length
+    total_sections: schema.sections.length,
+    current_section_interviewer_satisfied
   };
 }

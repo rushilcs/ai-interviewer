@@ -1,19 +1,35 @@
 /**
- * Deterministic metric computation from signals. 0-5 scale.
- * Missing signals = neutral; no negative inference.
- * implementation_quality only from section_coding; null if no code events.
+ * Deterministic metric computation for mock1-eval.
+ * Formulas: M1–M5 = sum(signal_values) / max_possible for their signals (0–1 scale).
+ * All metrics must have evidence; no LLM. If any required metric cannot be computed, caller sets overall_score = null.
  */
 
 import type { EvidencePointer, MetricOutput, SignalOutput } from "./types";
+import { MOCK1_METRIC_NAMES } from "./types";
+import {
+  SECTION_1_SIGNALS,
+  SECTION_2_SIGNALS,
+  SECTION_3_SIGNALS,
+  SECTION_CODING_SIGNALS,
+  SECTION_4_SIGNALS
+} from "./mock1Signals";
 
-function evidenceFromSignals(signals: SignalOutput[], names: string[], maxEvidence: number): EvidencePointer[] {
+function getSignal(name: string, signals: SignalOutput[]): SignalOutput | undefined {
+  return signals.find((s) => s.name === name);
+}
+
+function evidenceFromSignals(
+  signals: SignalOutput[],
+  names: readonly string[],
+  maxEvidence: number
+): EvidencePointer[] {
   const seen = new Set<string>();
   const out: EvidencePointer[] = [];
   for (const name of names) {
-    const s = signals.find((x) => x.name === name);
+    const s = getSignal(name, signals);
     if (!s || s.evidence.length === 0) continue;
     for (const e of s.evidence) {
-      const key = `${e.from_seq}-${e.quote ?? ""}`;
+      const key = `${e.from_seq ?? ""}-${e.quote ?? ""}-${e.type}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(e);
@@ -24,30 +40,33 @@ function evidenceFromSignals(signals: SignalOutput[], names: string[], maxEviden
 }
 
 /**
- * Map signal value 0/1/2 to contribution (0 = 0, 1 = 0.5, 2 = 1.0) for averaging.
+ * Metric = sum(signal values 0|1|2) / max_possible. Scale 0-1.
+ * max_possible = number of signals * 2.
  */
-function signalToScore(v: 0 | 1 | 2): number {
-  if (v === 0) return 0;
-  if (v === 1) return 0.5;
-  return 1;
-}
-
-/**
- * Compute 0-5 score from a set of signal names (average of their contributions, then scale to 0-5).
- */
-function scoreFromSignals(signals: SignalOutput[], names: string[]): number {
+function metricFromSignals(
+  signals: SignalOutput[],
+  signalNames: readonly string[],
+  name: string,
+  explanation: string
+): MetricOutput {
   let sum = 0;
   let count = 0;
-  for (const name of names) {
-    const s = signals.find((x) => x.name === name);
+  for (const n of signalNames) {
+    const s = getSignal(n, signals);
     if (s) {
-      sum += signalToScore(s.value);
+      sum += s.value;
       count++;
     }
   }
-  if (count === 0) return 0;
-  const normalized = sum / count;
-  return Math.round(normalized * 5 * 10) / 10;
+  const maxPossible = signalNames.length * 2;
+  const value = maxPossible > 0 ? Math.round((sum / maxPossible) * 100) / 100 : 0;
+  return {
+    name,
+    value,
+    scale: "0-1",
+    explanation,
+    evidence: evidenceFromSignals(signals, signalNames, 6)
+  };
 }
 
 export function computeMetrics(
@@ -55,63 +74,57 @@ export function computeMetrics(
   hasCodeSection: boolean
 ): { metrics: MetricOutput[]; implementationQualityNull: boolean } {
   const metrics: MetricOutput[] = [];
-  const scale: "0-5" = "0-5";
 
-  const reasoningSignals = [
-    "problem_restatement",
-    "metric_defined",
-    "constraints_named",
-    "model_family_justified",
-    "tradeoffs_discussed",
-    "limitations_identified"
-  ];
-  const reasoningScore = scoreFromSignals(signals, reasoningSignals);
-  metrics.push({
-    name: "reasoning_quality",
-    value: reasoningScore,
-    scale,
-    explanation: "Derived from problem framing, metric definition, tradeoffs, and reflection signals.",
-    evidence: evidenceFromSignals(signals, reasoningSignals, 4)
-  });
+  // M1 — Problem Decomposition (S1.1–S1.5)
+  metrics.push(
+    metricFromSignals(
+      signals,
+      SECTION_1_SIGNALS,
+      MOCK1_METRIC_NAMES[0],
+      "Derived from S1.1–S1.5: problem restatement, success metric, tradeoff, constraint, assumption."
+    )
+  );
 
-  const decompSignals = ["problem_restatement", "stakeholders_identified", "assumptions_articulated", "feature_strategy"];
-  metrics.push({
-    name: "problem_decomposition",
-    value: scoreFromSignals(signals, decompSignals),
-    scale,
-    explanation: "Derived from problem restatement, stakeholders, assumptions, and feature strategy.",
-    evidence: evidenceFromSignals(signals, decompSignals, 4)
-  });
+  // M2 — Modeling Judgment (S2.1–S2.5)
+  metrics.push(
+    metricFromSignals(
+      signals,
+      SECTION_2_SIGNALS,
+      MOCK1_METRIC_NAMES[1],
+      "Derived from S2.1–S2.5: model justification, alternatives, feature reasoning, constraint sensitivity, failure modes."
+    )
+  );
 
-  const modelingSignals = ["model_family_justified", "tradeoffs_discussed", "failure_modes", "deployment_considerations"];
-  metrics.push({
-    name: "modeling_judgment",
-    value: scoreFromSignals(signals, modelingSignals),
-    scale,
-    explanation: "Derived from model justification, tradeoffs, failure modes, deployment.",
-    evidence: evidenceFromSignals(signals, modelingSignals, 4)
-  });
+  // M3 — System Design Reasoning (S3.1–S3.4)
+  metrics.push(
+    metricFromSignals(
+      signals,
+      SECTION_3_SIGNALS,
+      MOCK1_METRIC_NAMES[2],
+      "Derived from S3.1–S3.4: training/inference, monitoring, rollout, scalability."
+    )
+  );
 
-  let implementationQualityNull = !hasCodeSection;
-  const implSignals = ["core_logic_correctness_proxy", "edge_cases_mentioned", "readability_proxy", "complexity_awareness"];
-  if (hasCodeSection) {
-    metrics.push({
-      name: "implementation_quality",
-      value: scoreFromSignals(signals, implSignals),
-      scale,
-      explanation: "Derived from coding section signals: correctness proxy, edge cases, readability, complexity.",
-      evidence: evidenceFromSignals(signals, implSignals, 4)
-    });
-  }
+  // M4 — Implementation Quality (C1–C4). When no code, signals are all 0 so M4 = 0 (still computed).
+  metrics.push(
+    metricFromSignals(
+      signals,
+      SECTION_CODING_SIGNALS,
+      MOCK1_METRIC_NAMES[3],
+      "Derived from C1–C4: functional correctness, edge cases, efficiency, code clarity."
+    )
+  );
+  const implementationQualityNull = false;
 
-  const reflectionSignals = ["limitations_identified", "improvements_proposed", "real_world_constraints_awareness"];
-  metrics.push({
-    name: "reflection_maturity",
-    value: scoreFromSignals(signals, reflectionSignals),
-    scale,
-    explanation: "Derived from limitations, improvements, real-world awareness.",
-    evidence: evidenceFromSignals(signals, reflectionSignals, 4)
-  });
+  // M5 — Reflection & Maturity (S4.1–S4.3)
+  metrics.push(
+    metricFromSignals(
+      signals,
+      SECTION_4_SIGNALS,
+      MOCK1_METRIC_NAMES[4],
+      "Derived from S4.1–S4.3: limitation awareness, improvement prioritization, judgment under uncertainty."
+    )
+  );
 
   return { metrics, implementationQualityNull };
 }

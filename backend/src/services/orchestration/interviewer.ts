@@ -9,10 +9,16 @@ import type { InterviewEvent } from "./state";
 import { reduceInterviewState } from "./state";
 import { getPromptsForSection } from "../../prompts/mle-v1";
 import type { PromptDef } from "../../prompts/mle-v1";
+import {
+  DEFAULT_FOLLOWUP_BUDGET,
+  MAX_FOLLOWUPS_PER_SECTION,
+  needs_more_followups
+} from "../interviewer/constants";
 
 export type PromptDecision =
   | { action: "ask"; prompt: PromptDef }
   | { action: "ask_followup"; section_id: string }
+  | { action: "mark_section_satisfied"; section_id: string }
   | { action: "none" };
 
 /**
@@ -30,8 +36,7 @@ function getLastEventInSection(
   return null;
 }
 
-/** Maximum number of follow-up questions per section (after the initial prompt). LLM may ask 2–4 based on responses. */
-export const MAX_FOLLOWUPS_PER_SECTION = 4;
+export { MAX_FOLLOWUPS_PER_SECTION };
 
 /**
  * Count how many PROMPT_PRESENTED events have been emitted in this section.
@@ -152,7 +157,7 @@ export function decideNextPrompt(
 
   const promptCount = countPromptsInSection(currentSectionId, events);
   if (promptCount >= 1 + MAX_FOLLOWUPS_PER_SECTION) {
-    return { action: "none" };
+    return { action: "mark_section_satisfied", section_id: currentSectionId };
   }
 
   if (hasInterviewerSectionSatisfied(currentSectionId, events)) {
@@ -161,6 +166,13 @@ export function decideNextPrompt(
 
   const lastInSection = getLastEventInSection(currentSectionId, events);
   if (lastInSection?.event_type === "CANDIDATE_MESSAGE") {
+    const followUpCount = promptCount - 1;
+    if (followUpCount >= DEFAULT_FOLLOWUP_BUDGET) {
+      const lastMessage = getLastCandidateMessageInSection(currentSectionId, events);
+      if (!needs_more_followups(lastMessage ?? "", currentSectionId)) {
+        return { action: "mark_section_satisfied", section_id: currentSectionId };
+      }
+    }
     return { action: "ask_followup", section_id: currentSectionId };
   }
 

@@ -1,6 +1,7 @@
 /**
  * Coding environment API: problems, drafts, run, submit.
  * All routes require talent token and interview (interview_id in path).
+ * Submit appends CANDIDATE_CODE_SUBMITTED and CODE_TESTS_RESULT to the event store for evaluation and replay.
  */
 
 import { Router } from "express";
@@ -12,6 +13,7 @@ import { getDraft, setDraft } from "../../coding/drafts";
 import { addSubmission, hasSubmitted } from "../../coding/submissions";
 import { checkRateLimit } from "../../coding/rateLimit";
 import { runCode, validateCodeSize } from "../../../../services/runner/src/index";
+import { appendEvent } from "../../services/orchestration/eventStore";
 
 const codingRouter = Router();
 
@@ -142,6 +144,28 @@ codingRouter.post("/submit", validateBody(runSubmitSchema), async (req, res, nex
     let status: "accepted" | "partial" | "failed" = "failed";
     if (passed === total && total > 0) status = "accepted";
     else if (passed > 0) status = "partial";
+
+    // Persist code and test result to event store for evaluation and ops replay
+    const clientEventId = `code-submit-${problem_id}`;
+    await appendEvent(
+      interviewId,
+      "CANDIDATE",
+      "CANDIDATE_CODE_SUBMITTED",
+      {
+        code_text: code,
+        language,
+        section_id: "section_coding",
+        problem_id
+      },
+      clientEventId
+    );
+    await appendEvent(
+      interviewId,
+      "SYSTEM",
+      "CODE_TESTS_RESULT",
+      { passed, total, problem_id },
+      null
+    );
 
     res.json({
       submission_id: `sub-${Date.now()}`,

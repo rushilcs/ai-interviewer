@@ -84,7 +84,7 @@ describe("Chunk 5: Deterministic Evaluation + Ops APIs", () => {
     expect(res.body.error).toMatch(/not COMPLETED|cannot evaluate/i);
   });
 
-  test("2) Complete interview then evaluate returns evaluation_version ess-v1, metrics with evidence, overall_score", async () => {
+  test("2) Complete interview then evaluate returns evaluation_version (ess-v2), metrics with evidence, overall_score", async () => {
     await prepareDatabase();
     await seedAll();
     const app = createApp();
@@ -164,7 +164,7 @@ describe("Chunk 5: Deterministic Evaluation + Ops APIs", () => {
     const session2 = await request(app).get(`/api/talent/session?token=${token2}`);
     const id2 = session2.body.interview_id;
     await request(app).post(`/api/talent/interviews/${id2}/start`).set("X-Invite-Token", token2);
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 5; i++) {
       await request(app)
         .post(`/api/talent/interviews/${id2}/messages`)
         .set("X-Invite-Token", token2)

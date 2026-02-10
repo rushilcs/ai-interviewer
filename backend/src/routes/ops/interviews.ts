@@ -3,6 +3,8 @@ import { pool } from "../../db/pool";
 import { requireOpsAuth } from "../../middlewares/auth";
 import { HttpError } from "../../utils/httpError";
 import { runEvaluation, EvaluationNotCompletedError } from "../../services/evaluation/runEvaluation";
+import { computeOverallScoreAndBand } from "../../services/evaluation/aggregate";
+import type { MetricOutput } from "../../services/evaluation/types";
 import { buildReplay } from "../../services/ops/buildReplay";
 import {
   buildOpsReview,
@@ -115,11 +117,19 @@ opsInterviewsRouter.get("/:id/evaluation", requireOpsAuth, async (req, res, next
       throw new HttpError(404, "Evaluation not found");
     }
     const r = row.rows[0];
+    const metrics = (r.metrics_json as MetricOutput[]) ?? [];
+    let overall_score = r.overall_score != null ? Number(r.overall_score) : null;
+    let overall_band = r.overall_band;
+    if (overall_score == null && overall_band == null && metrics.length >= 5) {
+      const computed = computeOverallScoreAndBand(metrics, false);
+      overall_score = computed.overall_score;
+      overall_band = computed.overall_band;
+    }
     res.json({
       interview_id: r.interview_id,
       evaluation_version: r.evaluation_version,
-      overall_score: r.overall_score != null ? Number(r.overall_score) : null,
-      overall_band: r.overall_band,
+      overall_score,
+      overall_band,
       metrics: r.metrics_json,
       sections: r.section_results_json,
       signals: r.signals_json,
@@ -143,7 +153,9 @@ opsInterviewsRouter.get("/:id/replay", requireOpsAuth, async (req, res, next) =>
       sections: replay.transcript_by_section,
       assistant_usage: replay.assistant_usage,
       section_timing: replay.timing_per_section,
-      disconnect_count: replay.disconnects
+      disconnect_count: replay.disconnects,
+      coding_submissions: replay.coding_submissions,
+      coding_test_results: replay.coding_test_results
     });
   } catch (e) {
     next(e);

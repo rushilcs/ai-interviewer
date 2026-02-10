@@ -14,7 +14,31 @@ export function assertLocalPostgresForTests(): void {
   }
 }
 
+/**
+ * Ensure tests run against a dedicated test DB so we never wipe dev data.
+ * Call this before resetPublicSchema.
+ */
+function assertTestDatabase(): void {
+  const dbUrl = process.env.DATABASE_URL ?? "";
+  const testUrl = process.env.TEST_DATABASE_URL;
+  const name = (() => {
+    try {
+      return new URL(dbUrl).pathname.replace(/^\//, "") || "";
+    } catch {
+      return "";
+    }
+  })();
+  if (!testUrl && !name.endsWith("_test") && !/test$/i.test(name)) {
+    throw new Error(
+      "Tests DROP and recreate the public schema, which would delete all your dev data (interviews, users, etc.). " +
+        "Use a separate test database: create it (e.g. createdb ai_interviewer_test), add TEST_DATABASE_URL to .env " +
+        '(e.g. TEST_DATABASE_URL=postgresql://user:pass@127.0.0.1:5432/ai_interviewer_test), then run tests again.'
+    );
+  }
+}
+
 export async function resetPublicSchema(): Promise<void> {
+  assertTestDatabase();
   await pool.query("DROP SCHEMA IF EXISTS public CASCADE");
   await pool.query("CREATE SCHEMA public");
 }

@@ -51,6 +51,16 @@ export type EvaluationOutput = {
   };
 };
 
-export const EVALUATION_VERSION = "ess-v1";
-export const SIGNAL_DEFS_VERSION = "signals-v1";
-export const METRIC_WEIGHTS_VERSION = "weights-v1";
+export const EVALUATION_VERSION = "ess-v2";
+export const EVALUATION_VERSION_LEGACY = "ess-v1";
+export const SIGNAL_DEFS_VERSION = "mock1-signals-v1";
+export const METRIC_WEIGHTS_VERSION = "mock1-weights-v1";
+
+/** Metric names for mock1 (M1–M5). Used for weights and aggregation. */
+export const MOCK1_METRIC_NAMES = [
+  "problem_decomposition",
+  "modeling_judgment",
+  "system_design_reasoning",
+  "implementation_quality",
+  "reflection_maturity"
+] as const;

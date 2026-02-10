@@ -47,7 +47,7 @@ export default function InterviewIdPage() {
         body: { client_event_id: `msg-${Date.now()}`, text: messageText.trim() },
       });
       setMessageText("");
-      refetch();
+      await refetch();
     } catch (err) {
       setNetworkError((err as ApiError).message ?? "Failed to send");
     } finally {
@@ -150,7 +150,9 @@ export default function InterviewIdPage() {
     ? snapshot.sections[currentSectionIndex + 1]
     : null;
   const sectionQuestionsComplete =
-    (!isCodingSection && sectionMax > 0 && sectionCount >= sectionMax) ||
+    (!isCodingSection &&
+      (snapshot?.current_section_interviewer_satisfied === true ||
+        (sectionMax > 0 && sectionCount >= sectionMax))) ||
     (isCodingSection && snapshot?.coding_section_complete === true);
 
   const handleMoveToNextSection = useCallback(() => {

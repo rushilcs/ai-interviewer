@@ -55,3 +55,11 @@ export function getNextSectionId(schema: InterviewSchemaDef, sectionId: string):
   if (idx < 0 || idx >= schema.sections.length - 1) return null;
   return schema.sections[idx + 1].id;
 }
+
+/**
+ * Get the last section id in the schema (e.g. Reflection & Judgment for mle-v1).
+ */
+export function getLastSectionId(schema: InterviewSchemaDef): string | null {
+  if (!schema.sections.length) return null;
+  return schema.sections[schema.sections.length - 1].id;
+}

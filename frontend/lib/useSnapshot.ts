@@ -49,6 +49,8 @@ export type InterviewSnapshot = {
   coding_submitted_problem_ids?: string[];
   /** Coding section: true when all problems have been submitted (enables next section without warning). */
   coding_section_complete?: boolean;
+  /** True when interviewer has finished questions for this section (enables next section without warning). */
+  current_section_interviewer_satisfied?: boolean;
 };
 
 export function useSnapshot(

@@ -7,6 +7,10 @@ import { HttpError } from "../../utils/httpError";
 import { env } from "../../config/env";
 import { z } from "zod";
 
+function isPgFkError(e: unknown): boolean {
+  return typeof e === "object" && e !== null && (e as { code?: string }).code === "23503";
+}
+
 export const invitesRouter = Router();
 
 const createInviteSchema = z.object({
@@ -31,6 +35,10 @@ invitesRouter.post("/", requireOpsAuth, validateBody(createInviteSchema), async 
     const invite_url = `${env.INVITE_BASE_URL.replace(/\/$/, "")}/interview?token=${token}`;
     res.status(201).json({ invite_id, token, invite_url });
   } catch (e) {
+    if (isPgFkError(e)) {
+      next(new HttpError(401, "Session expired or invalid. Please log in again."));
+      return;
+    }
     next(e);
   }
 });

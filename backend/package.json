@@ -9,7 +9,8 @@
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seedCli.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+"test:watch": "vitest",
+    "test:db:create": "tsx scripts/create-test-db.ts"
   },
   "keywords": [],
   "author": "",

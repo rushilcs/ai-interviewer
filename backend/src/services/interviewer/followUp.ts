@@ -2,10 +2,57 @@
  * Generate exactly one follow-up question from the interviewer AI.
  * Must select one allowed intent, be grounded in the candidate's last answer,
  * and not provide hints, explanations, or multiple questions.
+ * Stop condition: when coverage checkpoints for the section are met (≥K), MUST output [NO_MORE_FOLLOWUPS].
  */
 
 import { getSectionSpec } from "../../specs/mock-1";
 import { env } from "../../config/env";
+
+/** Coverage checkpoints per section (not applied to section_coding). When ≥K are satisfied, LLM MUST stop. */
+export const COVERAGE_CHECKPOINTS: Record<
+  string,
+  { checkpoints: string[]; k: number }
+> = {
+  section_1: {
+    checkpoints: [
+      "Restates the goal in own words",
+      "Identifies user value / objective",
+      "Mentions success metrics or evaluation",
+      "Mentions constraints (latency, scale, personalization, etc.)",
+      "Mentions available signals/data"
+    ],
+    k: 4
+  },
+  section_2: {
+    checkpoints: [
+      "Proposes a baseline model",
+      "Mentions ranking objective/loss",
+      "Mentions feature types",
+      "Mentions evaluation strategy",
+      "Mentions cold start or exploration"
+    ],
+    k: 4
+  },
+  section_3: {
+    checkpoints: [
+      "Describes multi-stage architecture",
+      "Addresses training vs inference separation",
+      "Mentions data logging / feature stores",
+      "Mentions monitoring or feedback loops",
+      "Mentions retraining/deployment"
+    ],
+    k: 4
+  },
+  section_4: {
+    checkpoints: [
+      "Identifies next improvements",
+      "Mentions experiment or validation plan",
+      "Mentions risks or limitations",
+      "Mentions scaling/production concerns"
+    ],
+    k: 3
+  }
+};
 
 export type GenerateFollowUpArgs = {
   section_id: string;
@@ -27,6 +74,151 @@ let followUpImpl: GenerateFollowUpQuestionFn | null = null;
 
 export function setGenerateFollowUpQuestionImpl(fn: GenerateFollowUpQuestionFn | null): void {
   followUpImpl = fn;
+}
+
+type BuildFollowUpSystemPromptOptions = {
+  section_id: string;
+  intentsText: string;
+  disallowedText: string;
+  recent_questions_in_section?: string[];
+  previous_sections_transcript?: string;
+};
+
+/**
+ * Build the system prompt for follow-up generation. Exported for tests (coverage checkpoints + stop rule).
+ */
+export function buildFollowUpSystemPrompt(options: BuildFollowUpSystemPromptOptions): string {
+  const {
+    section_id,
+    intentsText,
+    disallowedText,
+    recent_questions_in_section,
+    previous_sections_transcript
+  } = options;
+
+  const recentBlock =
+    recent_questions_in_section && recent_questions_in_section.length > 0
+      ? `
+
+CRITICAL — NO DUPLICATES OR REPHRASES: You MUST NOT ask a question that is the same as or a rephrase of any of these already-asked questions in this section:
+${recent_questions_in_section.map((q) => `- "${q}"`).join("\n")}
+Examples of FORBIDDEN rephrases: "How would you monitor X?" vs "How would you handle monitoring X?" — same question. "What metrics would you use?" vs "Which metrics would you use?" — same question. If the only change is wording (e.g. "monitor" vs "handle monitoring", "after deployment" vs "once deployed"), that is FORBIDDEN. Choose a genuinely different topic or intent from the allowed list, or output [NO_MORE_FOLLOWUPS] if no distinct question remains.
+`
+      : "";
+
+  const previousSectionsBlock =
+    previous_sections_transcript && previous_sections_transcript.trim()
+      ? `\nLONG-TERM MEMORY — Transcript from earlier sections. Do NOT ask a question substantially the same as one they already answered.\n\nEarlier sections:\n${previous_sections_transcript.slice(0, 6000)}\n\n`
+      : "";
+
+  const coverage = COVERAGE_CHECKPOINTS[section_id];
+  const coverageBlock =
+    coverage != null
+      ? `
+
+COVERAGE CHECKPOINTS for this section (use these to decide when to stop):
+${coverage.checkpoints.map((c) => `- ${c}`).join("\n")}
+
+STOP RULE (mandatory): Silently check which of the above checkpoints the candidate has already satisfied in their answers in this section. If the candidate has satisfied **at least ${coverage.k}** of these checkpoints, you MUST output exactly [NO_MORE_FOLLOWUPS] and nothing else. Do not ask another question when coverage is met.
+Any follow-up question MUST target a **missing** checkpoint. If no checkpoints are missing (or ≥${coverage.k} are already satisfied), you MUST output [NO_MORE_FOLLOWUPS].
+`
+      : "";
+
+  return `You are the interviewer in a technical ML interview. Your only job is to ask exactly ONE concise follow-up question, OR to signal that no more follow-ups are needed.
+
+NEVER output [NO_MORE_FOLLOWUPS] when the candidate:
+- Refuses to answer, asks to skip or move on (e.g. "let's move on", "skip this", "next question").
+- Gives a non-answer, deflects, or clearly avoids the question.
+- Says they don't know without any attempt to reason or speculate.
+
+In those cases you MUST ask a follow-up (rephrase or ask from a different angle). When coverage is sufficient (see stop rule below), output exactly:
+[NO_MORE_FOLLOWUPS]
+${coverageBlock}
+
+RULES (strict):
+1. You must choose exactly ONE of the allowed follow-up intents listed below. Your question must fit that intent.
+2. Your question must be grounded in the candidate's most recent answer.
+3. Do NOT ask a question the candidate has already answered (this section or previous). Never ask them to repeat.
+4. Ask only one question. Do not provide hints, explanations, or validation.${recentBlock}${previousSectionsBlock}
+
+Allowed follow-up intents for this section (choose one):
+${intentsText}
+
+Disallowed behavior:
+${disallowedText}
+
+Output only either: (a) the single follow-up question, no prefix; or (b) exactly [NO_MORE_FOLLOWUPS] if no further follow-up is needed.`;
+}
+
+/**
+ * Returns true if newQuestion is a duplicate or near-duplicate of any question in existingQuestions.
+ * Used as a hard guardrail so we never surface a repeat or rephrase to the candidate.
+ * Uses normalized word overlap (content words); no LLM or embeddings.
+ */
+export function isDuplicateOrNearDuplicate(
+  newQuestion: string,
+  existingQuestions: string[]
+): boolean {
+  if (!newQuestion.trim() || existingQuestions.length === 0) return false;
+
+  const newWords = getContentWords(newQuestion);
+  if (newWords.size === 0) return false;
+
+  for (const existing of existingQuestions) {
+    if (!existing.trim()) continue;
+    const existingWords = getContentWords(existing);
+    const overlap = countOverlap(newWords, existingWords);
+    const ratio = overlap / Math.min(newWords.size, existingWords.size);
+    if (ratio >= DUPLICATE_OVERLAP_THRESHOLD) return true;
+  }
+  return false;
+}
+
+const DUPLICATE_OVERLAP_THRESHOLD = 0.65;
+
+function normalizeForDuplicateCheck(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/['']/g, " ")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const STOPWORDS = new Set([
+  "a", "an", "and", "are", "be", "been", "being", "by", "can", "could", "did", "do", "does",
+  "for", "had", "has", "have", "in", "is", "it", "its", "may", "might", "of", "on", "or",
+  "our", "should", "that", "the", "this", "to", "was", "were", "we", "will", "would",
+  "you", "your"
+]);
+
+function stem(w: string): string {
+  if (w.length <= 4) return w;
+  if (w.endsWith("ing") && w.length > 5) return w.slice(0, -3);
+  if (w.endsWith("ed") && w.length > 4) return w.slice(0, -2);
+  if (w.endsWith("ly") && w.length > 4) return w.slice(0, -2);
+  if (w.endsWith("s") && !w.endsWith("ss") && w.length > 3) return w.slice(0, -1);
+  return w;
+}
+
+function getContentWords(question: string): Set<string> {
+  const normalized = normalizeForDuplicateCheck(question);
+  const tokens = normalized.split(" ").filter(Boolean);
+  const out = new Set<string>();
+  for (const t of tokens) {
+    if (STOPWORDS.has(t)) continue;
+    const s = stem(t);
+    if (s.length >= 2) out.add(s);
+  }
+  return out;
+}
+
+function countOverlap(a: Set<string>, b: Set<string>): number {
+  let n = 0;
+  for (const w of a) {
+    if (b.has(w)) n++;
+  }
+  return n;
 }
 
 /** Candidate is refusing/skipping; we must not accept [NO_MORE_FOLLOWUPS] and must ask a follow-up. */
@@ -67,48 +259,13 @@ export async function generateFollowUpQuestion(
     .join("\n");
   const disallowedText = spec.disallowed.join("\n");
 
-  const recentBlock =
-    args.recent_questions_in_section && args.recent_questions_in_section.length > 0
-      ? `\n8. Do NOT ask a question that is similar to or rephrases any of these already-asked questions in this section:\n${args.recent_questions_in_section.map((q) => `- "${q}"`).join("\n")}\nChoose a different angle or intent. Never ask the candidate to reiterate what they already said.\n`
-      : "";
-
-  const previousSectionsBlock =
-    args.previous_sections_transcript && args.previous_sections_transcript.trim()
-      ? `\nLONG-TERM MEMORY — Transcript from earlier sections of this interview. You must not ask the candidate to repeat or re-cover ground they have already addressed. Do NOT ask a question that is substantially the same as one they already answered in a previous section.\n\nEarlier sections:\n${args.previous_sections_transcript.slice(0, 6000)}\n\n`
-      : "";
-
-  const systemPrompt = `You are the interviewer in a technical ML interview. Your only job is to ask exactly ONE concise follow-up question, OR to signal that no more follow-ups are needed.
-
-WHEN TO OUTPUT [NO_MORE_FOLLOWUPS]: Only when the candidate has **substantively answered** the question and provided sufficient depth, detail, and expansion on their thoughts. You must be confident they engaged with the question.
-
-NEVER output [NO_MORE_FOLLOWUPS] when the candidate:
-- Refuses to answer, says they don't want to answer, or asks to skip or move on (e.g. "let's move on", "I don't want to answer", "skip this", "next question").
-- Gives a non-answer, deflects, or clearly avoids the question.
-- Says they don't know without any attempt to reason or speculate.
-
-In those cases you MUST ask a follow-up: rephrase the question, ask from a different angle, or politely ask them to engage with the topic (e.g. "Could you give a high-level take, even if brief?"). Do not let the candidate end the section by refusing—only you decide when the section has enough depth.
-
-When the candidate has substantively answered and you have enough depth, output exactly this line and nothing else:
-[NO_MORE_FOLLOWUPS]
-
-Otherwise, ask exactly one follow-up question. You may ask between 2 and 4 follow-ups in total in this section—you do NOT need to use all 4. Only output [NO_MORE_FOLLOWUPS] when they have actually engaged and provided substance.
-
-RULES (strict):
-1. You must choose exactly ONE of the allowed follow-up intents listed below. Your question must fit that intent.
-2. Your question must be grounded in the candidate's most recent answer. Reference or build on what they said.
-3. Do NOT ask a question that the candidate has already answered—in this section or in a previous section. If they addressed something you were going to ask, skip that and ask a different angle, or go deeper on an under-explored point. Never ask them to repeat or reiterate what they already said.
-4. Ask only one question. Do not ask multiple questions in one turn.
-5. Do not provide hints, explanations, metrics, corrections, or validation. Do not teach.
-6. Keep the question concise and neutral (one or two sentences). Encourage the candidate to expand on their thoughts where they have been brief or where more depth would help.
-7. Do not do any of the disallowed behaviors listed below.${recentBlock}${previousSectionsBlock}
-
-Allowed follow-up intents for this section (choose one):
-${intentsText}
-
-Disallowed behavior:
-${disallowedText}
-
-Output only either: (a) the single follow-up question, with no prefix, no numbering, no explanation; or (b) exactly [NO_MORE_FOLLOWUPS] if no further follow-up is needed.`;
+  const systemPrompt = buildFollowUpSystemPrompt({
+    section_id: args.section_id,
+    intentsText,
+    disallowedText,
+    recent_questions_in_section: args.recent_questions_in_section,
+    previous_sections_transcript: args.previous_sections_transcript
+  });
 
   const userContent = `Candidate's most recent answer:\n\n${args.last_candidate_message.slice(0, 2000)}`;
 
@@ -145,5 +302,10 @@ Output only either: (a) the single follow-up question, with no prefix, no number
     return { text: null };
   }
   if (!text) text = "Could you elaborate on that?";
+
+  const recent = args.recent_questions_in_section ?? [];
+  if (recent.length > 0 && isDuplicateOrNearDuplicate(text, recent)) {
+    return { text: null };
+  }
   return { text };
 }

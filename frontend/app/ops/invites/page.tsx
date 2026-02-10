@@ -102,7 +102,13 @@ export default function OpsInvitesPage() {
       setCreatedLink({ invite_url: data.invite_url, token: data.token });
       await loadInvites();
     } catch (err) {
-      setError((err as ApiError).message ?? "Failed to create invite");
+      const e = err as ApiError;
+      if (e.status === 401) {
+        if (typeof window !== "undefined") localStorage.removeItem("ops_jwt");
+        router.replace("/ops/login");
+        return;
+      }
+      setError(e.message ?? "Failed to create invite");
     } finally {
       setCreating(false);
     }
