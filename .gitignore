@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build / output
+dist/
+.next/
+out/
+
+# Env and secrets (do not commit)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+*.pem
+*.key
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs and coverage
+*.log
+coverage/

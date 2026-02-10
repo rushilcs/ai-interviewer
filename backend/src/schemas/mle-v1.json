@@ -1,0 +1,10 @@
+{
+  "version": "mle-v1",
+  "sections": [
+    { "id": "section_1", "name": "Problem Framing & Success Definition", "duration_seconds": 600 },
+    { "id": "section_2", "name": "Modeling Strategy & Tradeoffs", "duration_seconds": 900 },
+    { "id": "section_3", "name": "System Design & Failure Modes", "duration_seconds": 900 },
+    { "id": "section_coding", "name": "Coding", "duration_seconds": 600 },
+    { "id": "section_4", "name": "Reflection & Judgment", "duration_seconds": 300 }
+  ]
+}

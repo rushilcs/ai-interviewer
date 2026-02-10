@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Core */
+  --bg: #0b0f14;
+  --surface: #0f1621;
+  --surface2: #111c2a;
+  --border: #223044;
+  --text: #e6edf7;
+  --muted: #9db0c8;
+
+  /* Accents / semantic */
+  --primary: #4f7dff;
+  --success: #29d391;
+  --warning: #ffcc66;
+  --danger: #ff5c7a;
+
+  /* Alpha */
+  --overlay: rgba(11, 15, 20, 0.72);
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.5;
+}

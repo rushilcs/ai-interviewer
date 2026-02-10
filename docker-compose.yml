@@ -1,0 +1,18 @@
+# docker-compose.yml (save at repo root)
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: ai-interviewer-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_interviewer
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

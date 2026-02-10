@@ -1,0 +1,47 @@
+/**
+ * Prompt catalog for mle-v1. Initial prompts only; wording from docs/interviews/mock-1.md.
+ * Follow-up questions are generated dynamically by the interviewer AI (see services/interviewer/followUp.ts).
+ */
+
+import { getMock1Spec } from "../specs/mock-1";
+
+export type PromptDef = {
+  prompt_id: string;
+  section_id: string;
+  text: string;
+  type: "initial" | "followup";
+};
+
+export type SectionPrompts = {
+  section_id: string;
+  initial: PromptDef;
+  followups: never[];
+};
+
+/**
+ * Get prompts for a single section. Initial only; follow-ups are AI-generated.
+ */
+export function getPromptsForSection(
+  _version: string,
+  sectionId: string
+): SectionPrompts | undefined {
+  const spec = getMock1Spec();
+  const section = spec.sections.find((s) => s.id === sectionId);
+  if (!section) return undefined;
+
+  const text = section.initial_prompt;
+  return {
+    section_id: sectionId,
+    initial: {
+      prompt_id: `${sectionId}_initial`,
+      section_id: sectionId,
+      text,
+      type: "initial"
+    },
+    followups: []
+  };
+}
+
+export function getPromptsForSchemaVersion(_version: string): SectionPrompts[] {
+  return getMock1Spec().sections.map((s) => getPromptsForSection("mle-v1", s.id)!);
+}
